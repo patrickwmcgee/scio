@@ -17,6 +17,7 @@
 
 package com.spotify.scio.extra.voyager
 
+import com.spotify.scio.extra.voyager.VoyagerWriter.ChunkSize
 import com.spotify.scio.util.{RemoteFileUtil, ScioUtil}
 import com.spotify.scio.values.SideInput
 import com.spotify.voyager.jni.Index.{SpaceType, StorageDataType}
@@ -67,6 +68,7 @@ class VoyagerWriter private[voyager] (
   spaceType: SpaceType,
   storageDataType: StorageDataType,
   dim: Int,
+  maxElements: Long = ChunkSize.toLong,
   ef: Long = 200L,
   m: Long = 16L
 ) {
@@ -77,7 +79,7 @@ class VoyagerWriter private[voyager] (
     val namesOutputStream = Files.newOutputStream(namesFile)
 
     val names = List.newBuilder[String]
-    val index = new Index(spaceType, dim, m, ef, RandomSeed, ChunkSize.toLong, storageDataType)
+    val index = new Index(spaceType, dim, m, ef, RandomSeed, maxElements, storageDataType)
 
     vectors.zipWithIndex
       .map { case ((name, vector), idx) => (name, vector, idx.toLong) }

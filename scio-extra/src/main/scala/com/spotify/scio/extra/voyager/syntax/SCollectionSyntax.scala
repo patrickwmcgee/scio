@@ -99,34 +99,47 @@ class VoyagerPairSCollectionOps(
     implicit val remoteFileUtil: RemoteFileUtil = RemoteFileUtil.create(self.context.options)
     require(!uri.exists, s"Voyager URI ${uri.value} already exists")
 
-    self.transform { in =>
-      in.reifyAsIterableInGlobalWindow
-        .map { xs =>
-          val indexUri = uri.value.resolve(VoyagerUri.IndexFile)
-          val namesUri = uri.value.resolve(VoyagerUri.NamesFile)
-          val isLocal = ScioUtil.isLocalUri(uri.value)
+    val countSI: SideInput[Long] = self.count.asSingletonSideInput
 
-          val (localIndex, localNames) = if (isLocal) {
-            (Paths.get(indexUri), Paths.get(namesUri))
-          } else {
-            val tmpDir = Files.createTempDirectory("voyager-")
-            val tmpIndex = tmpDir.resolve(VoyagerUri.IndexFile)
-            val tmpNames = tmpDir.resolve(VoyagerUri.NamesFile)
-            (tmpIndex, tmpNames)
-          }
+    self
+      .groupBy(_ => ())
+      .withSideInputs(countSI)
+      .map { case ((_, xs), si) =>
+        val indexUri = uri.value.resolve(VoyagerUri.IndexFile)
+        val namesUri = uri.value.resolve(VoyagerUri.NamesFile)
+        val isLocal = ScioUtil.isLocalUri(uri.value)
 
-          val writer =
-            new VoyagerWriter(localIndex, localNames, spaceType, storageDataType, dim, ef, m)
-          writer.write(xs)
-
-          if (!isLocal) {
-            remoteFileUtil.upload(localIndex, indexUri)
-            remoteFileUtil.upload(localNames, namesUri)
-          }
-
-          uri
+        val (localIndex, localNames) = if (isLocal) {
+          (Paths.get(indexUri), Paths.get(namesUri))
+        } else {
+          val tmpDir = Files.createTempDirectory("voyager-")
+          val tmpIndex = tmpDir.resolve(VoyagerUri.IndexFile)
+          val tmpNames = tmpDir.resolve(VoyagerUri.NamesFile)
+          (tmpIndex, tmpNames)
         }
-    }
+
+        val maxElements: Long = si(countSI)
+        val writer =
+          new VoyagerWriter(
+            localIndex,
+            localNames,
+            spaceType,
+            storageDataType,
+            dim,
+            maxElements,
+            ef,
+            m
+          )
+        writer.write(xs)
+
+        if (!isLocal) {
+          remoteFileUtil.upload(localIndex, indexUri)
+          remoteFileUtil.upload(localNames, namesUri)
+        }
+
+        uri
+      }
+      .toSCollection
   }
 
   /**
